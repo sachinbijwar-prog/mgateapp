@@ -1,6 +1,14 @@
 // Firebase Setup (CDN v9 Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+// Custom Logger to Screen
+const debugBox = document.getElementById('debug-box');
+const log = (msg) => {
+    console.log(msg);
+    const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (debugBox) debugBox.innerHTML = `[${time}] ${msg}<br>` + debugBox.innerHTML;
+};
 
 /** 
  * USER ACTION REQUIRED:
@@ -24,14 +32,24 @@ const firebaseConfig = {
 let db;
 let isFirebaseConfigured = false;
 
-if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
-    const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    isFirebaseConfigured = true;
-    document.getElementById('sync-dot').style.background = '#22c55e';
-    document.getElementById('sync-text').innerText = 'Live Sync Active';
+if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "" && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    try {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        isFirebaseConfigured = true;
+        document.getElementById('sync-dot').style.background = '#22c55e';
+        document.getElementById('sync-text').innerText = 'Live Sync Active';
+        log("Firebase Connected");
+
+        // Enable Offline Persistence
+        enableIndexedDbPersistence(db).catch((err) => {
+            log("Persistence Error: " + err.code);
+        });
+    } catch (e) {
+        log("Init Error: " + e.message);
+    }
 } else {
-    console.warn("Firebase not configured. Using local storage for demo purposes.");
+    log("Running in Demo Mode");
     document.getElementById('sync-dot').style.background = '#eab308';
     document.getElementById('sync-text').innerText = 'Demo Mode (Offline)';
 }
@@ -68,12 +86,13 @@ const loadActiveVisitors = () => {
 
     const q = query(collection(db, "visitors"), where("status", "==", "active"));
     onSnapshot(q, (snapshot) => {
+        log("Data Received! Count: " + snapshot.docs.length);
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // Sort manually for now to avoid requiring a composite index immediately
-        data.sort((a,b) => (b.timeIn?.seconds || 0) - (a.timeIn?.seconds || 0));
+        data.sort((a, b) => (b.timeIn?.seconds || 0) - (a.timeIn?.seconds || 0));
         renderVisitors(data);
     }, (error) => {
-        console.error("Error loading active visitors:", error);
+        log("Load Error: " + error.message);
         alert("Firestore Error: " + error.message);
     });
 };
@@ -90,7 +109,7 @@ const loadHistory = () => {
     onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // Sort manually
-        data.sort((a,b) => (b.timeOut?.seconds || 0) - (a.timeOut?.seconds || 0));
+        data.sort((a, b) => (b.timeOut?.seconds || 0) - (a.timeOut?.seconds || 0));
         renderHistory(data);
     }, (error) => {
         console.error("Error loading history:", error);
@@ -154,15 +173,21 @@ entryForm.addEventListener('submit', async (e) => {
         timeIn: isFirebaseConfigured ? serverTimestamp() : new Date()
     };
 
+    log("Form submitted: " + newVisitor.name);
+
     if (isFirebaseConfigured) {
         try {
-            await addDoc(collection(db, "visitors"), newVisitor);
+            log("Saving to Firestore...");
+            const docRef = await addDoc(collection(db, "visitors"), newVisitor);
+            log("Save Success! ID: " + docRef.id);
+            alert("Entry Saved Successfully to Cloud!");
         } catch (error) {
-            console.error("Error saving visitor:", error);
-            alert("Failed to save visitor: " + error.message);
+            log("Firebase Save Error: " + error.message);
+            alert("Firebase Error: " + error.message);
             return;
         }
     } else {
+        log("Saving to Local...");
         const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
         newVisitor.id = Date.now().toString();
         localData.push(newVisitor);

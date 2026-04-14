@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -13,6 +14,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body>
     <header>
         <h1>Gate Manager</h1>
@@ -92,25 +94,209 @@
         </div>
     </nav>
 
-    <!-- Firebase SDK (Modular) -->
-    <script type="module" src="app.js"></script>
-    <script>
-        // Lucide replacement call
-        window.addEventListener('load', () => lucide.createIcons());
+    <!-- Application Logic (Merged for Reliability) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // Service Worker Registration
+        // Custom Logger to Screen
+        const debugBox = document.getElementById('debug-box');
+        const log = (msg) => {
+            console.log(msg);
+            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            if (debugBox) debugBox.innerHTML = `[${time}] ${msg}<br>` + debugBox.innerHTML;
+        };
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAYYZorlb34helzlTvB92oVoashRpgVhjc",
+            authDomain: "arvdmygate.firebaseapp.com",
+            projectId: "arvdmygate",
+            storageBucket: "arvdmygate.firebasestorage.app",
+            messagingSenderId: "702583778665",
+            appId: "1:702583778665:web:5d6bdddab6fd17ae6c21f8"
+        };
+
+        let db;
+        let isFirebaseConfigured = false;
+
+        const init = async () => {
+            if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    isFirebaseConfigured = true;
+                    document.getElementById('sync-dot').style.background = '#22c55e';
+                    document.getElementById('sync-text').innerText = 'Live Sync Active';
+                    log("Firebase Connected");
+
+                    enableIndexedDbPersistence(db).catch((err) => {
+                        log("Persistence Error: " + err.code);
+                    });
+                } catch (e) {
+                    log("Init Error: " + e.message);
+                }
+            } else {
+                log("Running in Demo Mode");
+                document.getElementById('sync-dot').style.background = '#eab308';
+                document.getElementById('sync-text').innerText = 'Demo Mode (Offline)';
+            }
+            loadActiveVisitors();
+            loadHistory();
+        };
+
+        // UI Elements
+        const activeList = document.getElementById('active-list');
+        const historyList = document.getElementById('history-list');
+        const entryForm = document.getElementById('entry-form');
+
+        const formatTime = (date) => {
+            if (!date) return '---';
+            const d = date instanceof Date ? date : date.toDate();
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+
+        const formatDate = (date) => {
+            if (!date) return '';
+            const d = date instanceof Date ? date : date.toDate();
+            return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+        };
+
+        const loadActiveVisitors = () => {
+            if (!isFirebaseConfigured) {
+                const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
+                renderVisitors(localData.filter(v => v.status === 'active'));
+                return;
+            }
+            const q = query(collection(db, "visitors"), where("status", "==", "active"));
+            onSnapshot(q, (snapshot) => {
+                log("Updated! Count: " + snapshot.docs.length);
+                const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                data.sort((a, b) => (b.timeIn?.seconds || 0) - (a.timeIn?.seconds || 0));
+                renderVisitors(data);
+            }, (error) => {
+                log("Load Error: " + error.message);
+            });
+        };
+
+        const loadHistory = () => {
+            if (!isFirebaseConfigured) {
+                const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
+                renderHistory(localData.filter(v => v.status === 'exited').sort((a, b) => b.timeOut - a.timeOut));
+                return;
+            }
+            const q = query(collection(db, "visitors"), where("status", "==", "exited"), limit(50));
+            onSnapshot(q, (snapshot) => {
+                const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                data.sort((a, b) => (b.timeOut?.seconds || 0) - (a.timeOut?.seconds || 0));
+                renderHistory(data);
+            });
+        };
+
+        const renderVisitors = (data) => {
+            if (data.length === 0) {
+                activeList.innerHTML = `<div class="empty-state" style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);"><p>No active visitors at the moment.</p></div>`;
+                return;
+            }
+            activeList.innerHTML = data.map(v => `
+                <div class="visitor-card">
+                    <div class="visitor-info">
+                        <h3>${v.name}</h3>
+                        <p>${v.purpose} • Flat ${v.flat}</p>
+                        <p style="font-size: 0.75rem;">Entered: ${formatTime(v.timeIn)}</p>
+                        ${v.vehicle ? `<p style="font-size: 0.75rem; color: var(--primary);">🚗 ${v.vehicle}</p>` : ''}
+                    </div>
+                    <button class="btn-exit" onclick="handleExitClick('${v.id}')">EXIT</button>
+                </div>
+            `).join('');
+        };
+
+        const renderHistory = (data) => {
+            if (data.length === 0) {
+                historyList.innerHTML = `<p style="text-align:center; padding: 2rem; color: var(--text-muted);">No history logs yet.</p>`;
+                return;
+            }
+            historyList.innerHTML = data.map(v => `
+                <div class="history-item">
+                    <div style="display:flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-weight:600">${v.name}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(v.timeIn)}</span>
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--text-muted);">${v.flat} • ${v.purpose}</div>
+                    <div style="font-size: 0.75rem; margin-top: 4px;">In: ${formatTime(v.timeIn)} • Out: ${formatTime(v.timeOut)}</div>
+                </div>
+            `).join('');
+        };
+
+        entryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newVisitor = {
+                name: document.getElementById('visitor-name').value,
+                phone: document.getElementById('visitor-phone').value,
+                flat: document.getElementById('visitor-flat').value,
+                purpose: document.getElementById('visitor-purpose').value,
+                vehicle: document.getElementById('visitor-vehicle').value,
+                status: 'active',
+                timeIn: isFirebaseConfigured ? serverTimestamp() : new Date()
+            };
+            log("Saving: " + newVisitor.name);
+            if (isFirebaseConfigured) {
+                try {
+                    await addDoc(collection(db, "visitors"), newVisitor);
+                    log("Saved to Cloud!");
+                    alert("Entry Saved!");
+                } catch (error) {
+                    log("Save Error: " + error.message);
+                    alert("Error: " + error.message);
+                }
+            } else {
+                const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
+                newVisitor.id = Date.now().toString();
+                localData.push(newVisitor);
+                localStorage.setItem('visitors', JSON.stringify(localData));
+                loadActiveVisitors();
+            }
+            entryForm.reset();
+            window.switchView('active', document.querySelector('.nav-item'));
+        });
+
+        window.handleExitClick = async (id) => {
+            log("Processing Exit...");
+            if (isFirebaseConfigured) {
+                const ref = doc(db, "visitors", id);
+                await updateDoc(ref, { status: 'exited', timeOut: serverTimestamp() });
+                log("Exit Recorded!");
+            } else {
+                const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
+                const idx = localData.findIndex(v => v.id === id);
+                if (idx !== -1) {
+                    localData[idx].status = 'exited';
+                    localData[idx].timeOut = new Date();
+                    localStorage.setItem('visitors', JSON.stringify(localData));
+                    loadActiveVisitors();
+                    loadHistory();
+                }
+            }
+        };
+
+        // View Switching
+        window.switchView = (viewId, el) => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-' + viewId).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            if (el) el.classList.add('active');
+        };
+
+        // Start App
+        window.addEventListener('load', () => {
+            lucide.createIcons();
+            init();
+        });
+
+        // Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js');
         }
-
-        // Simple view switching logic
-        function switchView(viewId, el) {
-            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-            document.getElementById('view-' + viewId).classList.add('active');
-            
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            el.classList.add('active');
-        }
     </script>
 </body>
+
 </html>
