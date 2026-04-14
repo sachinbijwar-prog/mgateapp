@@ -66,10 +66,15 @@ const loadActiveVisitors = () => {
         return;
     }
 
-    const q = query(collection(db, "visitors"), where("status", "==", "active"), orderBy("timeIn", "desc"));
+    const q = query(collection(db, "visitors"), where("status", "==", "active"));
     onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort manually for now to avoid requiring a composite index immediately
+        data.sort((a,b) => (b.timeIn?.seconds || 0) - (a.timeIn?.seconds || 0));
         renderVisitors(data);
+    }, (error) => {
+        console.error("Error loading active visitors:", error);
+        alert("Firestore Error: " + error.message);
     });
 };
 
@@ -81,10 +86,14 @@ const loadHistory = () => {
         return;
     }
 
-    const q = query(collection(db, "visitors"), where("status", "==", "exited"), orderBy("timeOut", "desc"), limit(50));
+    const q = query(collection(db, "visitors"), where("status", "==", "exited"), limit(50));
     onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort manually
+        data.sort((a,b) => (b.timeOut?.seconds || 0) - (a.timeOut?.seconds || 0));
         renderHistory(data);
+    }, (error) => {
+        console.error("Error loading history:", error);
     });
 };
 
@@ -146,7 +155,13 @@ entryForm.addEventListener('submit', async (e) => {
     };
 
     if (isFirebaseConfigured) {
-        await addDoc(collection(db, "visitors"), newVisitor);
+        try {
+            await addDoc(collection(db, "visitors"), newVisitor);
+        } catch (error) {
+            console.error("Error saving visitor:", error);
+            alert("Failed to save visitor: " + error.message);
+            return;
+        }
     } else {
         const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
         newVisitor.id = Date.now().toString();
