@@ -11,35 +11,14 @@ import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, update
  * 3. Add a "Web" app
  * 4. Paste the config object here
  */
-const firebaseConfig = {
-    "project_info": {
-        "project_number": "91344630677",
-        "project_id": "buildinggateapp",
-        "storage_bucket": "buildinggateapp.firebasestorage.app"
-    },
-    "client": [
-        {
-            "client_info": {
-                "mobilesdk_app_id": "1:91344630677:android:cac0fb1eba560a5451bc9c",
-                "android_client_info": {
-                    "package_name": "com.arv.com"
-                }
-            },
-            "oauth_client": [],
-            "api_key": [
-                {
-                    "current_key": "AIzaSyAEDDrG8yd2sDqudb9otlqccQWJTmX9uCc"
-                }
-            ],
-            "services": {
-                "appinvite_service": {
-                    "other_platform_oauth_client": []
-                }
-            }
-        }
-    ],
-    "configuration_version": "1"
-}
+const firebaseConfig = const firebaseConfig = {
+    apiKey: "AIzaSyAEDDrG8yd2sDqudb9otlqccQWJTmX9uCc",
+    authDomain: "buildinggateapp.firebaseapp.com",
+    projectId: "buildinggateapp",
+    storageBucket: "buildinggateapp.firebasestorage.app",
+    messagingSenderId: "91344630677",
+    appId: "1:91344630677:web:b702d5082d5c476551bc9c" // Note: You need to register a "Web" app in Firebase to get this
+};
 
 // Initialize app only if config is provided
 let db;
