@@ -1,0 +1,16 @@
+{
+  "name": "Gate Manager",
+  "short_name": "GateApp",
+  "description": "Visitor entry/exit management for building security.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3239/3239147.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
