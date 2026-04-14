@@ -11,13 +11,13 @@ import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, update
  * 3. Add a "Web" app
  * 4. Paste the config object here
  */
-const firebaseConfig = const firebaseConfig = {
-    apiKey: "AIzaSyAEDDrG8yd2sDqudb9otlqccQWJTmX9uCc",
-    authDomain: "buildinggateapp.firebaseapp.com",
-    projectId: "buildinggateapp",
-    storageBucket: "buildinggateapp.firebasestorage.app",
-    messagingSenderId: "91344630677",
-    appId: "1:91344630677:web:b702d5082d5c476551bc9c" // Note: You need to register a "Web" app in Firebase to get this
+const firebaseConfig = {
+    apiKey: "AIzaSyAYYZorlb34helzlTvB92oVoashRpgVhjc",
+    authDomain: "arvdmygate.firebaseapp.com",
+    projectId: "arvdmygate",
+    storageBucket: "arvdmygate.firebasestorage.app",
+    messagingSenderId: "702583778665",
+    appId: "1:702583778665:web:5d6bdddab6fd17ae6c21f8"
 };
 
 // Initialize app only if config is provided
