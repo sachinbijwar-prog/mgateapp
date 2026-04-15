@@ -17,16 +17,46 @@
 
 <body>
     <header>
-        <h1>Gate Manager</h1>
+        <div style="flex: 1;">
+            <h1>ARV Royale D Wing - Gate Manager</h1>
+            <div id="current-guard-display"
+                style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: none;">
+                Guard on Duty: <span id="guard-name-text" style="color: var(--primary); font-weight: 600;"></span>
+                <button onclick="handleLogout()" class="btn-switch" style="margin-left: 8px;">Switch</button>
+            </div>
+        </div>
         <div class="status-indicator">
             <div class="dot" id="sync-dot"></div>
             <span id="sync-text">Live Sync</span>
         </div>
     </header>
 
+    <!-- Login View (Overlay) -->
+    <section id="view-login" class="view">
+        <div class="login-card">
+            <div style="color: var(--primary); margin-bottom: 1rem;">
+                <i data-lucide="shield-check" style="width: 48px; height: 48px;"></i>
+            </div>
+            <h2>Who is on Duty?</h2>
+            <p style="color: var(--text-muted); margin-bottom: 2rem; font-size: 0.875rem;">Select your name to start
+                recording entries.</p>
+            <div class="form-group" style="text-align: left;">
+                <label for="guard-select">Select Guard Name</label>
+                <select id="guard-select"
+                    style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border);">
+                    <option value="">-- Choose Name --</option>
+                    <option value="Deepak Chavan">Deepak Chavan</option>
+                    <option value="Dudh Nath">Dudh Nath</option>
+                </select>
+            </div>
+            <button onclick="handleLogin()" class="btn-primary" style="margin-top: 1rem; width: 100%;">Start
+                Duty</button>
+        </div>
+    </section>
+
     <main class="container">
         <!-- Dashboard / Active Visitors -->
-        <section id="view-active" class="view active">
+        <section id="view-active" class="view">
             <h2 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-muted);">Current Visitors</h2>
             <div id="active-list">
                 <!-- Active visitors will be injected here -->
@@ -46,11 +76,16 @@
                 </div>
                 <div class="form-group">
                     <label for="visitor-phone">Phone Number</label>
-                    <input type="tel" id="visitor-phone" placeholder="Mobile Number" required>
+                    <input type="tel" id="visitor-phone" placeholder="10 Digit Mobile Number" required pattern="\d{10}"
+                        title="Please enter exactly 10 digits"
+                        oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10)">
                 </div>
                 <div class="form-group">
                     <label for="visitor-flat">Flat / Unit Number</label>
-                    <input type="text" id="visitor-flat" placeholder="e.g. A-302" required>
+                    <input list="flat-numbers" id="visitor-flat" placeholder="Select or Type Flat" required>
+                    <datalist id="flat-numbers">
+                        <!-- Will be populated by JS -->
+                    </datalist>
                 </div>
                 <div class="form-group">
                     <label for="visitor-purpose">Purpose of Visit</label>
@@ -99,13 +134,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // Custom Logger to Screen
-        const debugBox = document.getElementById('debug-box');
-        const log = (msg) => {
-            console.log(msg);
-            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            if (debugBox) debugBox.innerHTML = `[${time}] ${msg}<br>` + debugBox.innerHTML;
-        };
+        // Global State
+        let currentGuard = localStorage.getItem('guardName');
 
         const firebaseConfig = {
             apiKey: "AIzaSyAYYZorlb34helzlTvB92oVoashRpgVhjc",
@@ -119,7 +149,21 @@
         let db;
         let isFirebaseConfigured = false;
 
+        const populateFlats = () => {
+            const list = document.getElementById('flat-numbers');
+            const flats = [];
+            flats.push('104', '105');
+            flats.push('201', '202', '204', '205');
+            for (let f = 3; f <= 11; f++) {
+                for (let u = 1; u <= 6; u++) {
+                    flats.push(`${f}${u.toString().padStart(2, '0')}`);
+                }
+            }
+            list.innerHTML = flats.map(f => `<option value="${f}">`).join('');
+        };
+
         const init = async () => {
+            populateFlats();
             if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
                 try {
                     const app = initializeApp(firebaseConfig);
@@ -127,19 +171,19 @@
                     isFirebaseConfigured = true;
                     document.getElementById('sync-dot').style.background = '#22c55e';
                     document.getElementById('sync-text').innerText = 'Live Sync Active';
-                    log("Firebase Connected");
 
                     enableIndexedDbPersistence(db).catch((err) => {
-                        log("Persistence Error: " + err.code);
+                        console.error("Persistence Error: ", err.code);
                     });
                 } catch (e) {
-                    log("Init Error: " + e.message);
+                    console.error("Init Error: ", e.message);
                 }
             } else {
-                log("Running in Demo Mode");
                 document.getElementById('sync-dot').style.background = '#eab308';
                 document.getElementById('sync-text').innerText = 'Demo Mode (Offline)';
             }
+
+            checkLoginState();
             loadActiveVisitors();
             loadHistory();
         };
@@ -148,6 +192,38 @@
         const activeList = document.getElementById('active-list');
         const historyList = document.getElementById('history-list');
         const entryForm = document.getElementById('entry-form');
+
+        const checkLoginState = () => {
+            if (!currentGuard) {
+                switchView('login');
+                document.getElementById('current-guard-display').style.display = 'none';
+            } else {
+                document.getElementById('guard-name-text').innerText = currentGuard;
+                document.getElementById('current-guard-display').style.display = 'block';
+                if (document.getElementById('view-login').classList.contains('active')) {
+                    switchView('active', document.querySelector('.nav-item'));
+                }
+            }
+        };
+
+        window.handleLogin = () => {
+            const name = document.getElementById('guard-select').value;
+            if (!name) {
+                alert("Please select your name.");
+                return;
+            }
+            localStorage.setItem('guardName', name);
+            currentGuard = name;
+            checkLoginState();
+        };
+
+        window.handleLogout = () => {
+            if (confirm("Switch to a different guard?")) {
+                localStorage.removeItem('guardName');
+                currentGuard = null;
+                checkLoginState();
+            }
+        };
 
         const formatTime = (date) => {
             if (!date) return '---';
@@ -169,12 +245,11 @@
             }
             const q = query(collection(db, "visitors"), where("status", "==", "active"));
             onSnapshot(q, (snapshot) => {
-                log("Updated! Count: " + snapshot.docs.length);
                 const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 data.sort((a, b) => (b.timeIn?.seconds || 0) - (a.timeIn?.seconds || 0));
                 renderVisitors(data);
             }, (error) => {
-                log("Load Error: " + error.message);
+                console.error("Load Error: ", error.message);
             });
         };
 
@@ -203,6 +278,7 @@
                         <h3>${v.name}</h3>
                         <p>${v.purpose} • Flat ${v.flat}</p>
                         <p style="font-size: 0.75rem;">Entered: ${formatTime(v.timeIn)}</p>
+                        <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">Recorded by: ${v.recordedBy || 'System'}</p>
                         ${v.vehicle ? `<p style="font-size: 0.75rem; color: var(--primary);">🚗 ${v.vehicle}</p>` : ''}
                     </div>
                     <button class="btn-exit" onclick="handleExitClick('${v.id}')">EXIT</button>
@@ -223,6 +299,7 @@
                     </div>
                     <div style="font-size: 0.875rem; color: var(--text-muted);">${v.flat} • ${v.purpose}</div>
                     <div style="font-size: 0.75rem; margin-top: 4px;">In: ${formatTime(v.timeIn)} • Out: ${formatTime(v.timeOut)}</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">Guard: ${v.recordedBy || '---'}</div>
                 </div>
             `).join('');
         };
@@ -236,16 +313,15 @@
                 purpose: document.getElementById('visitor-purpose').value,
                 vehicle: document.getElementById('visitor-vehicle').value,
                 status: 'active',
+                recordedBy: currentGuard,
                 timeIn: isFirebaseConfigured ? serverTimestamp() : new Date()
             };
-            log("Saving: " + newVisitor.name);
+
             if (isFirebaseConfigured) {
                 try {
                     await addDoc(collection(db, "visitors"), newVisitor);
-                    log("Saved to Cloud!");
-                    alert("Entry Saved!");
+                    alert("Visitor Entry Saved!");
                 } catch (error) {
-                    log("Save Error: " + error.message);
                     alert("Error: " + error.message);
                 }
             } else {
@@ -260,11 +336,9 @@
         });
 
         window.handleExitClick = async (id) => {
-            log("Processing Exit...");
             if (isFirebaseConfigured) {
                 const ref = doc(db, "visitors", id);
                 await updateDoc(ref, { status: 'exited', timeOut: serverTimestamp() });
-                log("Exit Recorded!");
             } else {
                 const localData = JSON.parse(localStorage.getItem('visitors') || '[]');
                 const idx = localData.findIndex(v => v.id === id);
