@@ -108,7 +108,25 @@
 
         <!-- History -->
         <section id="view-history" class="view">
-            <h2 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-muted);">Recent Logs</h2>
+            <h2 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-muted);">Recent Logs & Export</h2>
+            
+            <div class="export-bar">
+                <div class="form-group">
+                    <label for="export-from">From Date</label>
+                    <input type="date" id="export-from">
+                </div>
+                <div class="form-group">
+                    <label for="export-to">To Date</label>
+                    <input type="date" id="export-to">
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <button onclick="handleExportClick()" class="btn-primary" id="btn-export" style="margin-top: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <i data-lucide="download" style="width: 18px;"></i> Export
+                    </button>
+                </div>
+            </div>
+
             <div id="history-list">
                 <!-- History logs will be injected here -->
             </div>
@@ -133,7 +151,7 @@
     <!-- Application Logic (Merged for Reliability) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, serverTimestamp, orderBy, limit, enableIndexedDbPersistence, getDocs, Timestamp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         // Global State
         let currentGuard = localStorage.getItem('guardName');
@@ -201,7 +219,9 @@
             } else {
                 document.getElementById('guard-name-text').innerText = currentGuard;
                 document.getElementById('current-guard-display').style.display = 'block';
-                if (document.getElementById('view-login').classList.contains('active')) {
+                // Always ensure 'active' view is shown if guard is logged in and no view is active
+                const activeView = document.querySelector('.view.active');
+                if (!activeView || activeView.id === 'view-login') {
                     switchView('active', document.querySelector('.nav-item'));
                 }
             }
@@ -277,7 +297,7 @@
                 <div class="visitor-card">
                     <div class="visitor-info">
                         <h3>${v.name}</h3>
-                        <p>${v.purpose} • Flat ${v.flat}</p>
+                        <p>${v.purpose} • Flat <strong>${v.flat}</strong></p>
                         <p style="font-size: 0.75rem;">Entered: ${formatTime(v.timeIn)}</p>
                         <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">Recorded by: ${v.recordedBy || 'System'}</p>
                         ${v.vehicle ? `<p style="font-size: 0.75rem; color: var(--primary);">🚗 ${v.vehicle}</p>` : ''}
@@ -298,7 +318,7 @@
                         <span style="font-weight:600">${v.name}</span>
                         <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(v.timeIn)}</span>
                     </div>
-                    <div style="font-size: 0.875rem; color: var(--text-muted);">${v.flat} • ${v.purpose}</div>
+                    <div style="font-size: 0.875rem; color: var(--text-muted);"><strong>${v.flat}</strong> • ${v.purpose}</div>
                     <div style="font-size: 0.75rem; margin-top: 4px;">In: ${formatTime(v.timeIn)} • Out: ${formatTime(v.timeOut)}</div>
                     <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">Guard: ${v.recordedBy || '---'}</div>
                 </div>
@@ -353,17 +373,83 @@
             }
         };
 
+        window.handleExportClick = async () => {
+            const fromDateStr = document.getElementById('export-from').value;
+            const toDateStr = document.getElementById('export-to').value;
+            
+            if (!fromDateStr || !toDateStr) {
+                alert("Please select both dates.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-export');
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = "Exporting...";
+            btn.disabled = true;
+
+            try {
+                const start = new Date(fromDateStr);
+                start.setHours(0,0,0,0);
+                const end = new Date(toDateStr);
+                end.setHours(23,59,59,999);
+
+                const q = query(
+                    collection(db, "visitors"), 
+                    where("timeIn", ">=", start), 
+                    where("timeIn", "<=", end),
+                    orderBy("timeIn", "desc")
+                );
+
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) {
+                    alert("No logs found for this date range.");
+                    return;
+                }
+
+                const data = snapshot.docs.map(doc => doc.data());
+                let csv = 'Date,Name,Phone,Flat,Purpose,Vehicle,Status,Time In,Time Out,Recorded By\n';
+                data.forEach(v => {
+                    const date = formatDate(v.timeIn);
+                    const tIn = formatTime(v.timeIn);
+                    const tOut = formatTime(v.timeOut);
+                    csv += `"${date}","${v.name}","${v.phone}","${v.flat}","${v.purpose}","${v.vehicle || '-'}","${v.status}","${tIn}","${tOut}","${v.recordedBy || '-'}"\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Visitor_Logs_${fromDateStr}_to_${toDateStr}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (err) {
+                console.error("Export Error:", err);
+                alert("Export failed. If this is the first time, you may need to click the 'Create Index' link in the browser console.");
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
+        };
+
         // View Switching
         window.switchView = (viewId, el) => {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.getElementById('view-' + viewId).classList.add('active');
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             if (el) el.classList.add('active');
+            
+            // Re-initialize icons if switching to history to show download icon
+            if (viewId === 'history') lucide.createIcons();
         };
 
         // Start App
         window.addEventListener('load', () => {
             lucide.createIcons();
+            // Set default dates
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('export-from').value = today;
+            document.getElementById('export-to').value = today;
             init();
         });
 
